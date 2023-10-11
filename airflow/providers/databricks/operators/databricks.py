@@ -164,6 +164,13 @@ class DatabricksJobRunLink(BaseOperatorLink):
         return XCom.get_value(key=XCOM_RUN_PAGE_URL_KEY, ti_key=ti_key)
 
 
+def normalize_list(items_list: list) -> list:
+    """Normalizes list so all items are of dictionaries."""
+    if all(isinstance(item, dict) for item in items_list):
+        return items_list
+    return [item.as_dict() for item in items_list]
+
+
 class DatabricksCreateJobsOperator(BaseOperator):
     """Creates (or resets) a Databricks job using the API endpoint.
 
@@ -242,7 +249,7 @@ class DatabricksCreateJobsOperator(BaseOperator):
     ) -> None:
         """Creates a new ``DatabricksCreateJobsOperator``."""
         super().__init__(**kwargs)
-        self.json = json or {}
+        self.json: str | bool | list | dict = json or {}
         self.databricks_conn_id = databricks_conn_id
         self.polling_period_seconds = polling_period_seconds
         self.databricks_retry_limit = databricks_retry_limit
@@ -253,9 +260,9 @@ class DatabricksCreateJobsOperator(BaseOperator):
         if tags is not None:
             self.json["tags"] = tags
         if tasks is not None:
-            self.json["tasks"] = [task.as_dict() for task in tasks]
+            self.json["tasks"] = normalize_list(tasks)
         if job_clusters is not None:
-            self.json["job_clusters"] = [job_cluster.as_dict() for job_cluster in job_clusters]
+            self.json["job_clusters"] = normalize_list(job_clusters)
         if email_notifications is not None:
             self.json["email_notifications"] = email_notifications.as_dict()
         if webhook_notifications is not None:
@@ -269,7 +276,7 @@ class DatabricksCreateJobsOperator(BaseOperator):
         if git_source is not None:
             self.json["git_source"] = git_source.as_dict()
         if access_control_list is not None:
-            self.json["access_control_list"] = [acl.as_dict() for acl in access_control_list]
+            self.json["access_control_list"] = normalize_list(access_control_list)
 
         self.json = normalise_json_content(self.json)
 
