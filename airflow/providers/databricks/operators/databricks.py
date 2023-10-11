@@ -21,10 +21,7 @@ from __future__ import annotations
 import time
 import warnings
 from functools import cached_property
-from logging import Logger
 from typing import TYPE_CHECKING, Any, Sequence
-
-from databricks.sdk.service import jobs
 
 from airflow.configuration import conf
 from airflow.exceptions import AirflowException, AirflowProviderDeprecationWarning
@@ -34,6 +31,10 @@ from airflow.providers.databricks.triggers.databricks import DatabricksExecution
 from airflow.providers.databricks.utils.databricks import normalise_json_content, validate_trigger_event
 
 if TYPE_CHECKING:
+    from logging import Logger
+
+    from databricks.sdk.service import jobs
+
     from airflow.models.taskinstancekey import TaskInstanceKey
     from airflow.utils.context import Context
 
@@ -171,17 +172,11 @@ def normalize_list(items_list: list) -> list:
 
 
 class DatabricksCreateJobsOperator(BaseOperator):
-    """
-    Creates (or resets) a Databricks job.
-
-    Uses `api/2.1/jobs/create
-    <https://docs.databricks.com/dev-tools/api/latest/jobs.html#operation/JobsCreate>`_
-    (or `api/2.1/jobs/reset
-    <https://docs.databricks.com/dev-tools/api/latest/jobs.html#operation/JobsReset>`_)
-    API endpoint.
+    """Creates (or resets) a Databricks job using the API endpoint.
 
     .. seealso::
-        https://docs.databricks.com/dev-tools/api/latest/jobs.html#operation/JobsCreate
+        https://docs.databricks.com/api/workspace/jobs/create
+        https://docs.databricks.com/api/workspace/jobs/reset
 
     :param json: A JSON object containing API parameters which will be passed
         directly to the ``api/2.1/jobs/create`` endpoint. The other named parameters
@@ -221,6 +216,7 @@ class DatabricksCreateJobsOperator(BaseOperator):
     :param databricks_retry_delay: Number of seconds to wait between retries (it
             might be a floating point number).
     :param databricks_retry_args: An optional dictionary with arguments passed to ``tenacity.Retrying`` class.
+
     """
 
     # Used in airflow.models.BaseOperator
@@ -232,7 +228,7 @@ class DatabricksCreateJobsOperator(BaseOperator):
     def __init__(
         self,
         *,
-        json: dict | None = None,
+        json: Any | None = None,
         name: str | None = None,
         tags: dict[str, str] | None = None,
         tasks: list[jobs.JobTaskSettings] | None = None,
@@ -507,6 +503,8 @@ class DatabricksSubmitRunOperator(BaseOperator):
 
         if "dbt_task" in self.json and "git_source" not in self.json:
             raise AirflowException("git_source is required for dbt_task")
+        if pipeline_task is not None and "pipeline_id" in pipeline_task and "pipeline_name" in pipeline_task:
+            raise AirflowException("'pipeline_name' is not allowed in conjunction with 'pipeline_id'")
 
         # This variable will be used in case our task gets killed.
         self.run_id: int | None = None
@@ -526,6 +524,15 @@ class DatabricksSubmitRunOperator(BaseOperator):
         )
 
     def execute(self, context: Context):
+        if (
+            "pipeline_task" in self.json
+            and self.json["pipeline_task"].get("pipeline_id") is None
+            and self.json["pipeline_task"].get("pipeline_name")
+        ):
+            # If pipeline_id is not provided, we need to fetch it from the pipeline_name
+            pipeline_name = self.json["pipeline_task"]["pipeline_name"]
+            self.json["pipeline_task"]["pipeline_id"] = self._hook.get_pipeline_id(pipeline_name)
+            del self.json["pipeline_task"]["pipeline_name"]
         json_normalised = normalise_json_content(self.json)
         self.run_id = self._hook.submit_run(json_normalised)
         if self.deferrable:
