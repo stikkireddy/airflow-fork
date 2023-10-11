@@ -253,7 +253,7 @@ class DatabricksCreateJobsOperator(BaseOperator):
     ) -> None:
         """Creates a new ``DatabricksCreateJobsOperator``."""
         super().__init__(**kwargs)
-        self.json = json or {}
+        self.json: str | bool | list | dict = json or {}
         self.databricks_conn_id = databricks_conn_id
         self.polling_period_seconds = polling_period_seconds
         self.databricks_retry_limit = databricks_retry_limit
